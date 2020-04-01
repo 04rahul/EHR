@@ -71,29 +71,33 @@ function generateOTP() {
     return OTP; 
 } 
 
-async function getAsset()
+
+async function getAsset(data, publicKey,privateKey,meta)
 {
-        var asset = await conn.searchAssets('ford')
-        console.log(asset[0])
-        var transaction = await conn.getTransaction(asset[0].id)
-        console.log(transaction)
+        var asset = await conn.searchAssets(data)
+        asset.forEach(item=> console.log(item.id))
+        var transaction = await conn.listTransactions(asset[0].id)
+        console.log(transaction.length)
+	
+        console.log(transaction[transaction.length-1].metadata)
+        metadata = transaction[transaction.length-1].metadata
+        metadata['doclist'].push(meta)
+        metdata = JSON.stringify(metadata)
+        console.log("metadata is b", metadata)
 
 
         const txTransferBob = driver.Transaction.makeTransferTransaction(
 
-                [{ tx: transaction, output_index: 0 }],
-                [driver.Transaction.makeOutput(driver.Transaction.makeEd25519Condition(alice.publicKey))],
-                {price: '100 euro'}
-        )
-        
+                [{ tx: transaction[transaction.length-1], output_index: 0 }],
+                [driver.Transaction.makeOutput(driver.Transaction.makeEd25519Condition(publicKey))],
+                metadata
+)        
         // Sign with alice's private key
-        let txTransferBobSigned = driver.Transaction.signTransaction(txTransferBob, alice.privateKey)
-        console.log('Posting signed transaction: ', txTransferBobSigned)
+        let txTransferBobSigned = driver.Transaction.signTransaction(txTransferBob, privateKey)
         
         // Post with commit so transaction is validated and included in a block
         transfer = await conn.postTransactionCommit(txTransferBobSigned)
         console.log(transfer.id)
-
 }
 
 
@@ -433,6 +437,7 @@ res.render('/home/rd/project/latestpatientprof1/patientmedhistory.ejs',{'doc':re
 app.post('/access',function(req,res)
 {
 console.log(req.body.value);
+req.session.demail=req.body.value;
 MongoClient.connect(url, function(err, db) {
   if (err) throw err;
   var dbo = db.db("bigchain");
@@ -499,13 +504,14 @@ let testBuffer = new Buffer(testFile);
         }
         console.log(filee[0].hash);
 var a=encrypt(filee[0].hash);
-
+var id=generateOTP();
 
 
 const assetdata = {
          
                 'email':req.session.email,
 		'file':a,
+		'id':id,
         	'description':fields.d,
 }
 
@@ -513,8 +519,10 @@ const assetdata = {
 // (can be `null` if not needed)
 // E.g. the bicycle is fabricated on earth
 const metadata = {
-'datetime': new Date().toString()
-
+'email':req.session.email,
+'datetime': new Date().toString(),
+'doclist':[],
+'id':id
 }
 
 // Construct a transaction payload
@@ -561,24 +569,85 @@ res.redirect(url2);
 })
 app.post('/check',function(req,res)
 {
-console.log("RES: "+res);
-var count= Object.keys(req.body).length;
-console.log(count);
-console.log("REQ-BODY: "+req.body);
-for(i=0;i<count;i++)
+
+  var count= Object.keys(req.body).length;
+  console.log(count);
+
+  for(i=0;i<count;i++)
+  {
+    if(req.body[i]==undefined)
+    {
+      count++;
+    }
+    else
+    {
+      console.log(i);
+      console.log(req.body[i]);
+      getAsset(req.body[i], req.session.key.publicKey, req.session.key.privateKey,req.session.demail);
+  }
+}
+
+})
+app.get('/revoke',function(req,res)
 {
-if(req.body[i]==undefined)
+var e=0;
+var rest = [];
+var reslen=0;
+
+function abc(callback)
 {
-count++;
+
+MongoClient.connect(url, function(err, db) {
+  if (err) throw err;
+  var dbo = db.db("bigchain");
+  //Find the first document in the customers collection:
+
+dbo.collection("metadata").find({'metadata.email':'f3c3b4b656bf5b8d152087ce31825e0994f918874805020b05ff8f1e89163b03'}).toArray( function(err, result) {  
+for(var i=0;i<result.length;i++)
+{
+var a=result[i].metadata.doclist;
+
+if (a.length == '0')
+{continue;
+
 }
 else
 {
-console.log(i);
-console.log(req.body[i]);
+//console.log(result[i].metadata);
+
+//console.log(result);
+
+dbo.collection("assets").find({'data.id':result[i].metadata.id}).toArray( function(err, resu) {
+
+  reslen=reslen+1;
+
+rest = rest.concat(resu);
+callback();
+ db.close(); 
+
+ 
+
+});
 }
 }
-getAsset()
+
+});
+});
+
+}
+
+
+abc(function(){
+    console.log(rest);
+
+console.log(rest.length);
+if(rest.length =='4')
+{
+res.render('/home/rd/project/latestpatientprof1/patientrevokeaccess.ejs',{'doc':rest});
+}
 })
+})
+
 //add the router
 app.use('/', router);
 app.listen(process.env.port || 8080);
