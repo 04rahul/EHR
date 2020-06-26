@@ -1,2 +1,2 @@
 # EHR
-ehr using hyperledger fabric
+ehr using blockchain
